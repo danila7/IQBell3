@@ -38,7 +38,7 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 WiFiClient wifiClient;
 PubSubClient client(wifiClient);
 
-boolean secondTimetable, bellIsOn = false, notSent = true;
+boolean secondTimetable, bellIsOn = false;
 byte mode = 0, currentDay = 255, secondPrev = 255, i, ttable[24], prevBellNum = 255, relayOnTime = 0;
 byte firstBell, lastBell, prevBell, numOfBell, ringingState = 0;
 int firstBellMinute, lastBellMinute, ii;
@@ -75,6 +75,8 @@ void setup() {
 	client.setServer(mqttServer, mqttPort);
 	client.setCallback(callback);
 	reconnect();
+	client.loop();
+	sendFullState();
 }
 
 
@@ -89,23 +91,16 @@ void intro(){ //showing boot animation
 	display.println(utf8rus("Загрузка"));
  	display.display();      // Show initial text
  	display.startscrollleft(0x00, 0x0F);
- 	delay(2000);
 }
 
 void loop() {
 	getLocalTime(&timeinfo);
-	if (!client.connected()) {
-		reconnect();
-	}
+	reconnect();
 	client.loop();
-	if(notSent){
-		sendFullState();
-		notSent = false;
-	}
 	checkMode();
-  if(timeinfo.tm_sec !=secondPrev){
-	updateDisplay();
-	sendState();
+  	if(timeinfo.tm_sec !=secondPrev){
+		updateDisplay();
+		sendState();
 		if(mode == 0){
 			timeTick();
 			bellControl();
