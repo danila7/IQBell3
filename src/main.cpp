@@ -39,7 +39,7 @@ WiFiClient wifiClient;
 PubSubClient client(wifiClient);
 
 boolean secondTimetable, bellIsOn = false, notSent = true;
-byte mode = 0, currentDay = 255, secondPrev = 255, i, ttable[16], prevBellNum = 255, relayOnTime = 0;
+byte mode = 0, currentDay = 255, secondPrev = 255, i, ttable[24], prevBellNum = 255, relayOnTime = 0;
 byte firstBell, lastBell, prevBell, numOfBell, ringingState = 0;
 int firstBellMinute, lastBellMinute, ii;
 long timeTillBell;
@@ -215,10 +215,10 @@ void checkMode(){
 		if (timeinfo.tm_wday == 1 || timeinfo.tm_wday == 7) mode = 1;
 		else {
 			for (i = 0; i < 8; i++) {
-				byte startExceptionMonth = EEPROM.read(32 + i * 4);
-				byte startExceptionDay = EEPROM.read(33 + i * 4);
-				byte endExceptionMonth = EEPROM.read(34 + i * 4);
-				byte endExceptionDay = EEPROM.read(35 + i * 4);
+				byte startExceptionMonth = EEPROM.read(48 + i * 4);
+				byte startExceptionDay = EEPROM.read(49 + i * 4);
+				byte endExceptionMonth = EEPROM.read(50 + i * 4);
+				byte endExceptionDay = EEPROM.read(51 + i * 4);
 				if(startExceptionDay > 31 || endExceptionDay > 31 ||
 				startExceptionMonth > 12 || endExceptionMonth > 12 || startExceptionDay == 0 ||
 				startExceptionMonth == 0 || endExceptionDay == 0 || endExceptionMonth == 0) continue;
@@ -228,9 +228,9 @@ void checkMode(){
 			}
 			secondTimetable = false;
 			if(mode == 0){
-				for (i = 0; i < 8; i++) {
-					byte exceptionMonth = EEPROM.read(64 + i * 2);
-					byte exceptionDay = EEPROM.read(65 + i * 2);
+				for (i = 0; i < 16; i++) {
+					byte exceptionMonth = EEPROM.read(80 + i * 2);
+					byte exceptionDay = EEPROM.read(81 + i * 2);
 					boolean shortDay;
 					shortDay = (exceptionMonth > 127);
 					exceptionMonth &= B01111111;
@@ -241,10 +241,10 @@ void checkMode(){
 				}
 			}
 		}
-		for (i = 0; i < 16; i++) ttable[i] = EEPROM.read(secondTimetable ? i + 16 : i);
+		for (i = 0; i < 24; i++) ttable[i] = EEPROM.read(secondTimetable ? i + 24 : i);
 		firstBell = 255;
 		lastBell = 0;
-		for(i = 0; i< 16; i++){
+		for(i = 0; i< 24; i++){
 			if(ttable[i] > 127) continue;
 			if(ttable[i] > lastBell) lastBell = ttable[i];
 			if(ttable[i] < firstBell) firstBell = ttable[i];
@@ -283,7 +283,7 @@ boolean isInside(byte startDay, byte startMonth, byte endDay, byte endMonth) {
 void timeTick(){
 	prevBell = 255;
 	numOfBell = 255;
-	for(i=0; i<16; i++){
+	for(i=0; i<24; i++){
 		
 		if(ttable[i] > 127) continue;
 		if(ttable[i] < prevBell){
