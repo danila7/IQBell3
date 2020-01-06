@@ -186,13 +186,16 @@ void updateDisplay(){
 }
 
 void callback(char* topic, byte* message, unsigned int length) {
-	byte messageTemp[80];
-	if(topic[0] == 'u'){
-		for (int i = 0; i < 80; i++) {
-		messageTemp[i] = message[i];
+	if(topic[0] == 's'){
+		byte messageTemp[112];
+		for (int i = 0; i < 112; i++) {
+			messageTemp[i] = message[i];
+		}
+		setData(messageTemp);
+	} else if(topic[0] == 'm'){
+		manualBell(byte(message[0]));
 	}
-	setData(messageTemp);
-	}
+	
 }
 
 void reconnect() {
@@ -201,7 +204,8 @@ void reconnect() {
 	// Attempt to connect
 	if (client.connect("bell",mqttUser,mqttPassword)) {
 	  // ... and resubscribe
-	  client.subscribe("in");
+	  client.subscribe("s");
+	  client.subscribe("m");
 	} else {
 	  // Wait 5 seconds before retrying
 	  delay(5000);
@@ -371,17 +375,17 @@ void sendState(){
 		sendf[5] = ringingState;
 		sendf[6] = relayOnTime;
 		sendf[7] = numOfBell;
-		client.publish("state", sendf, true);
+		client.publish("i", sendf, true);
 }
 
 void sendFullState(){
-	char sendf[90];
-	for(i=0;i<90;i++) sendf[i] = 'q';
-	client.publish("full", sendf, true);
+	char sendf[112];
+	for(i=0;i<112;i++) sendf[i] = EEPROM.read(i);
+	client.publish("d", sendf, true);
 }
 
 void setData(byte data[]){
-	for(i=0; i<80; i++) EEPROM.write(i, data[i]);
+	for(i=0; i<112; i++) EEPROM.write(i, data[i]);
 	sendFullState();
 }
 	
