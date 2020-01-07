@@ -12,6 +12,7 @@
 #define SCREEN_HEIGHT 64 // OLED display height, in pixels
 #define RELAY_PIN 4
 #define BELL_ON_TIME 7
+#define EEPROM_SIZE 112
 
 const char* ssid     = "JustANet";
 const char* password = "wifi4you";
@@ -31,7 +32,7 @@ boolean introFlag = true;
 typedef union {
 	uint32_t lValue;
 	uint8_t bValue[sizeof(lValue)];
-} ULongByBytes; //is using for sending and receiving unsigned long via Serial
+} ULongByBytes;
 
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
@@ -55,7 +56,6 @@ byte validate(byte vl, byte mn, byte mx);
 boolean isInside(byte startDay, byte startMonth, byte endDay, byte endMonth);
 void sendState();
 void sendFullState();
-void setData(byte data[]);
 void timeTick();
 void bellControl();
 void manualBell(byte type);
@@ -64,6 +64,7 @@ void reconnect();
 String utf8rus(String source);
 
 void setup() {
+	EEPROM.begin(EEPROM_SIZE);
 	// put your setup code here, to run once:
 	intro();
 	pinMode(RELAY_PIN, OUTPUT);
@@ -182,13 +183,20 @@ void updateDisplay(){
 
 void callback(char* topic, byte* message, unsigned int length) {
 	if(topic[0] == 's'){
-		byte messageTemp[112];
-		for (int i = 0; i < 112; i++) {
-			messageTemp[i] = message[i];
+		for (byte i = 0; i < 112; i++) {
+			EEPROM.write(i, message[i]);
 		}
-		setData(messageTemp);
+		EEPROM.commit();
+		display.clearDisplay();
+		display.setTextSize(1);
+  		display.setCursor(0, 0);
+	 	display.print(utf8rus("Обновление..."));
+		display.setCursor(0, 16);
+	 	display.print(String(message[0]));
+		display.display();
+		sendFullState();
 	} else if(topic[0] == 'm'){
-		manualBell(byte(message[0]));
+		manualBell((byte)message[0]);
 	}
 	
 }
@@ -211,7 +219,7 @@ void reconnect() {
 void checkMode(){
 	mode = 0; //average mode
   	if (currentDay != timeinfo.tm_mday) {
-		if (timeinfo.tm_wday == 1 || timeinfo.tm_wday == 7) mode = 1;
+		if (timeinfo.tm_wday == 1 || timeinfo.tm_wday == 7) mode = 1; //Sunday/Saturday
 		else {
 			for (i = 0; i < 8; i++) {
 				byte startExceptionMonth = EEPROM.read(48 + i * 4);
@@ -222,7 +230,7 @@ void checkMode(){
 				startExceptionMonth > 12 || endExceptionMonth > 12 || startExceptionDay == 0 ||
 				startExceptionMonth == 0 || endExceptionDay == 0 || endExceptionMonth == 0) continue;
 				if (isInside(startExceptionDay, startExceptionMonth, endExceptionDay, endExceptionMonth)){
-					mode = 2;
+					mode = 2; //long holidays
 				}
 			}
 			secondTimetable = false;
@@ -234,7 +242,7 @@ void checkMode(){
 					shortDay = (exceptionMonth > 127);
 					exceptionMonth &= B01111111;
 					if (exceptionMonth == (timeinfo.tm_mon + 1) && exceptionDay == timeinfo.tm_mday) {
-						if (shortDay == false) mode = 3;
+						if (shortDay == false) mode = 3;  //short holidays
 						else secondTimetable = true;
 					}
 				}
@@ -362,28 +370,28 @@ void sendState(){
 		time_t now;
 		time(&now);
 		toSend.lValue = now;
-		char sendf[8];
-		for (i = 0; i < 4; i++) sendf[i] = toSend.bValue[i]; //sending current time in unix format as 4 bytes
 		byte modeToSend = mode;
 		if(secondTimetable) modeToSend += 128;
-		sendf[4] = modeToSend;
-		sendf[5] = ringingState;
-		sendf[6] = relayOnTime;
-		sendf[7] = numOfBell;
-		client.publish("i", sendf, true);
+		client.beginPublish("i", 8, true);
+		client.write(toSend.bValue[0]);
+		client.write(toSend.bValue[1]);
+		client.write(toSend.bValue[2]);
+		client.write(toSend.bValue[3]);
+		client.write(modeToSend);
+		client.write(ringingState);		
+		client.write(relayOnTime);
+		client.write(numOfBell);
+		client.endPublish();
 }
 
 void sendFullState(){
-	char sendf[112];
-	for(i=0;i<112;i++) sendf[i] = EEPROM.read(i);
-	client.publish("d", sendf, true);
+	byte array[112];
+	client.beginPublish("d", 112, true);
+	for(i=0;i<112;i++) array[i] = EEPROM.read(i);
+	client.write(array, 112);
+	client.endPublish();
 }
 
-void setData(byte data[]){
-	for(i=0; i<112; i++) EEPROM.write(i, data[i]);
-	sendFullState();
-}
-	
 /* Recode russian fonts from UTF-8 to Windows-1251 */
 String utf8rus(String source){
   int i,k;
