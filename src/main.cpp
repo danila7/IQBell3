@@ -191,8 +191,6 @@ void callback(char* topic, byte* message, unsigned int length) {
 		display.setTextSize(1);
   		display.setCursor(0, 0);
 	 	display.print(utf8rus("Обновление..."));
-		display.setCursor(0, 16);
-	 	display.print(String(message[0]));
 		display.display();
 		sendFullState();
 	} else if(topic[0] == 'm'){
