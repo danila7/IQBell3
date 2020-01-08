@@ -258,7 +258,7 @@ void checkMode(){
 		lastBellMinute = (lastBell/12+8)*60 + (lastBell%12*5);
 		currentDay = timeinfo.tm_mday;
 	}
-	if(mode == 0){
+	if(mode == 0 || mode > 3){
 		if((firstBellMinute - 10) >= (timeinfo.tm_hour*60+timeinfo.tm_min)) mode = 4; //classes have not started
 		else if((lastBellMinute + 10) <= (timeinfo.tm_hour*60+timeinfo.tm_min)) mode = 5; //classes have finished
 	}
