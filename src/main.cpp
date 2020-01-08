@@ -169,14 +169,21 @@ void updateDisplay(){
 		comingBells+="  "+get2digits(ttable[numOfBell]/12+8)+":"+get2digits(ttable[numOfBell]%12*5);
 		display.print(comingBells);
 	}
-	if(ringingState > 0 && relayOnTime != 0){
-		display.setCursor(67, 16);
-		display.print(utf8rus("Звонок: "));
-		display.print(get2digits(relayOnTime));
-	}
 	if(mode == 0 || mode > 3){
-		display.setCursor(0, 48);
+		display.setCursor(0, 40);
 		display.print(utf8rus(secondTimetable?"Сокращеннные уроки":"Обычные уроки"));
+	}
+	if(ringingState != 0){
+		display.setCursor(0, 52);
+		switch(ringingState){
+			case 1: display.print(utf8rus("Звонок: "));
+			break;
+			case 2: display.print(utf8rus("Совещание: "));
+			break;
+			case 3: display.print(utf8rus("Линейка: "));
+			break;
+		}
+		display.print(get2digits(relayOnTime));
 	}
 	display.display();      // Show initial text
 }
@@ -193,8 +200,9 @@ void callback(char* topic, byte* message, unsigned int length) {
 	 	display.print(utf8rus("Обновление..."));
 		display.display();
 		sendFullState();
+		currentDay = 255;
 	} else if(topic[0] == 'm'){
-		manualBell((byte)message[0]);
+		manualBell(message[0]);
 	}
 	
 }
@@ -215,8 +223,8 @@ void reconnect() {
 }
 
 void checkMode(){
-	mode = 0; //average mode
   	if (currentDay != timeinfo.tm_mday) {
+		mode = 0; //average mode
 		if (timeinfo.tm_wday == 1 || timeinfo.tm_wday == 7) mode = 1; //Sunday/Saturday
 		else {
 			for (i = 0; i < 8; i++) {
@@ -239,28 +247,32 @@ void checkMode(){
 					boolean shortDay;
 					shortDay = (exceptionMonth > 127);
 					exceptionMonth &= B01111111;
-					if (exceptionMonth == (timeinfo.tm_mon + 1) && exceptionDay == timeinfo.tm_mday) {
+					if ((exceptionMonth == (timeinfo.tm_mon + 1)) && (exceptionDay == timeinfo.tm_mday)) {
 						if (shortDay == false) mode = 3;  //short holidays
 						else secondTimetable = true;
 					}
 				}
 			}
+			if(mode == 0){
+				for (i = 0; i < 24; i++) ttable[i] = EEPROM.read(secondTimetable ? i + 24 : i);
+				firstBell = 255;
+				lastBell = 0;
+				for(i = 0; i< 24; i++){
+					if(ttable[i] > 127) continue;
+					if(ttable[i] > lastBell) lastBell = ttable[i];
+					if(ttable[i] < firstBell) firstBell = ttable[i];
+				}
+				firstBellMinute = (firstBell/12+8)*60 + (firstBell%12*5);
+				lastBellMinute = (lastBell/12+8)*60 + (lastBell%12*5);
+			}
 		}
-		for (i = 0; i < 24; i++) ttable[i] = EEPROM.read(secondTimetable ? i + 24 : i);
-		firstBell = 255;
-		lastBell = 0;
-		for(i = 0; i< 24; i++){
-			if(ttable[i] > 127) continue;
-			if(ttable[i] > lastBell) lastBell = ttable[i];
-			if(ttable[i] < firstBell) firstBell = ttable[i];
-		}
-		firstBellMinute = (firstBell/12+8)*60 + (firstBell%12*5);
-		lastBellMinute = (lastBell/12+8)*60 + (lastBell%12*5);
 		currentDay = timeinfo.tm_mday;
 	}
-	if(mode == 0 || mode > 3){
-		if((firstBellMinute - 10) >= (timeinfo.tm_hour*60+timeinfo.tm_min)) mode = 4; //classes have not started
-		else if((lastBellMinute + 10) <= (timeinfo.tm_hour*60+timeinfo.tm_min)) mode = 5; //classes have finished
+	if(mode == 0 || mode == 4){
+		if(firstBellMinute == 1770) mode = 4;
+		else if(firstBellMinute > (timeinfo.tm_hour*60+timeinfo.tm_min+10)) mode = 4; //classes have not started
+		else if(lastBellMinute < (timeinfo.tm_hour*60+timeinfo.tm_min-10)) mode = 5; //classes have finished
+		else mode = 0;
 	}
 }
 
