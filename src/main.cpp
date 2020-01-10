@@ -11,8 +11,9 @@
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 64 // OLED display height, in pixels
 #define RELAY_PIN 4
-#define BELL_ON_TIME 7
-#define EEPROM_SIZE 112
+#define BELL_ON_TIME 7 //bell's duration
+#define EEPROM_SIZE 113
+#define DAYLIGHT_OFFSET 0 //no Daylight Saving Time in Russia
 
 const char* ssid     = "JustANet";
 const char* password = "wifi4you";
@@ -22,8 +23,6 @@ const char* mqttUser = "ujqjrjyr";
 const char* mqttPassword = "iCmu4k4g5RaB";
 
 const char* ntpServer = "de.pool.ntp.org";
-const long  gmtOffset_sec = 10800;
-const int   daylightOffset_sec = 0;
 
 struct tm timeinfo;
 
@@ -41,7 +40,7 @@ PubSubClient client(wifiClient);
 
 boolean secondTimetable, bellIsOn = false;
 byte mode = 0, currentDay = 255, secondPrev = 255, i, ttable[24], prevBellNum = 255, relayOnTime = 0;
-byte firstBell, lastBell, prevBell, numOfBell, ringingState = 0;
+byte firstBell, lastBell, prevBell, numOfBell, timeZone, ringingState = 0;
 int firstBellMinute, lastBellMinute, ii;
 long timeTillBell;
 
@@ -71,12 +70,14 @@ void setup() {
 	digitalWrite(RELAY_PIN, LOW);
 	WiFi.begin(ssid, password);
 	while (WiFi.status() != WL_CONNECTED) delay(500);
-	configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+	timeZone = EEPROM.read(112);
+	if(timeZone > 10) timeZone = 0;	
+	configTime((2 + timeZone)*3600, DAYLIGHT_OFFSET, ntpServer);
 	getLocalTime(&timeinfo);
 	client.setServer(mqttServer, mqttPort);
 	client.setCallback(callback);
 	reconnect();
-	client.loop();
+	client.loop(); 
 	sendFullState();
 }
 
@@ -190,10 +191,13 @@ void updateDisplay(){
 
 void callback(char* topic, byte* message, unsigned int length) {
 	if(topic[0] == 's'){
-		for (byte i = 0; i < 112; i++) {
+		for (byte i = 0; i < 113; i++) {
 			EEPROM.write(i, message[i]);
 		}
 		EEPROM.commit();
+		timeZone = message[112];
+		if(timeZone > 10) timeZone = 0;	
+		configTime((2 + timeZone)*3600, DAYLIGHT_OFFSET, ntpServer);
 		display.clearDisplay();
 		display.setTextSize(1);
   		display.setCursor(0, 0);
@@ -225,50 +229,53 @@ void reconnect() {
 void checkMode(){
   	if (currentDay != timeinfo.tm_mday) {
 		mode = 0; //average mode
-		if (timeinfo.tm_wday == 1 || timeinfo.tm_wday == 7) mode = 1; //Sunday/Saturday
-		else {
-			for (i = 0; i < 8; i++) {
-				byte startExceptionMonth = EEPROM.read(48 + i * 4);
-				byte startExceptionDay = EEPROM.read(49 + i * 4);
-				byte endExceptionMonth = EEPROM.read(50 + i * 4);
-				byte endExceptionDay = EEPROM.read(51 + i * 4);
-				if(startExceptionDay > 31 || endExceptionDay > 31 ||
-				startExceptionMonth > 12 || endExceptionMonth > 12 || startExceptionDay == 0 ||
-				startExceptionMonth == 0 || endExceptionDay == 0 || endExceptionMonth == 0) continue;
-				if (isInside(startExceptionDay, startExceptionMonth, endExceptionDay, endExceptionMonth)){
-					mode = 2; //long holidays
-				}
+		for (i = 0; i < 8; i++) {
+			byte startExceptionMonth = EEPROM.read(48 + i * 4);
+			byte startExceptionDay = EEPROM.read(49 + i * 4);
+			byte endExceptionMonth = EEPROM.read(50 + i * 4);
+			byte endExceptionDay = EEPROM.read(51 + i * 4);
+			if(startExceptionDay > 31 || endExceptionDay > 31 ||
+			startExceptionMonth > 12 || endExceptionMonth > 12 || startExceptionDay == 0 ||
+			startExceptionMonth == 0 || endExceptionDay == 0 || endExceptionMonth == 0) continue;
+			if (isInside(startExceptionDay, startExceptionMonth, endExceptionDay, endExceptionMonth)){
+				mode = 2; //long holidays
 			}
+		}
+		if(mode == 0){
 			secondTimetable = false;
-			if(mode == 0){
-				for (i = 0; i < 16; i++) {
-					byte exceptionMonth = EEPROM.read(80 + i * 2);
-					byte exceptionDay = EEPROM.read(81 + i * 2);
-					boolean shortDay;
-					shortDay = (exceptionMonth > 127);
-					exceptionMonth &= B01111111;
-					if ((exceptionMonth == (timeinfo.tm_mon + 1)) && (exceptionDay == timeinfo.tm_mday)) {
-						if (shortDay == false) mode = 3;  //short holidays
-						else secondTimetable = true;
-					}
+			for (i = 0; i < 16; i++) {
+				byte exceptionMonth = EEPROM.read(80 + i * 2);
+				byte exceptionDay = EEPROM.read(81 + i * 2);
+				boolean shortDay;
+				shortDay = (exceptionMonth > 127);
+				exceptionMonth &= B01111111;
+				if ((exceptionMonth == (timeinfo.tm_mon + 1)) && (exceptionDay == timeinfo.tm_mday)) {
+					if (shortDay == false) mode = 3;  //short holidays
+					else secondTimetable = true;
 				}
 			}
-			if(mode == 0){
-				for (i = 0; i < 24; i++) ttable[i] = EEPROM.read(secondTimetable ? i + 24 : i);
-				firstBell = 255;
-				lastBell = 0;
-				for(i = 0; i< 24; i++){
-					if(ttable[i] > 127) continue;
-					if(ttable[i] > lastBell) lastBell = ttable[i];
-					if(ttable[i] < firstBell) firstBell = ttable[i];
+			if(!secondTimetable){
+				if(timeinfo.tm_wday == 1 || timeinfo.tm_wday == 7){ //Sunday/Saturday
+					if(mode == 0) mode = 1;
+					else mode = 0;
 				}
-				firstBellMinute = (firstBell/12+8)*60 + (firstBell%12*5);
-				lastBellMinute = (lastBell/12+8)*60 + (lastBell%12*5);
 			}
+		}
+		if(mode == 0){
+			for (i = 0; i < 24; i++) ttable[i] = EEPROM.read(secondTimetable ? i + 24 : i);
+			firstBell = 255;
+			lastBell = 0;
+			for(i = 0; i< 24; i++){
+				if(ttable[i] > 127) continue;
+				if(ttable[i] > lastBell) lastBell = ttable[i];
+				if(ttable[i] < firstBell) firstBell = ttable[i];
+			}
+			firstBellMinute = (firstBell/12+8)*60 + (firstBell%12*5);
+			lastBellMinute = (lastBell/12+8)*60 + (lastBell%12*5);
 		}
 		currentDay = timeinfo.tm_mday;
 	}
-	if(mode == 0 || mode == 4){
+	if(mode == 0 || mode > 3){
 		if(firstBellMinute == 1770) mode = 4;
 		else if(firstBellMinute > (timeinfo.tm_hour*60+timeinfo.tm_min+10)) mode = 4; //classes have not started
 		else if(lastBellMinute < (timeinfo.tm_hour*60+timeinfo.tm_min-10)) mode = 5; //classes have finished
@@ -379,7 +386,9 @@ void sendState(){
 		ULongByBytes toSend;
 		time_t now;
 		time(&now);
-		toSend.lValue = now;
+		timeZone = EEPROM.read(112);
+		if(timeZone > 10) timeZone = 0;	
+		toSend.lValue = now + (timeZone + 2)*3600;
 		byte modeToSend = mode;
 		if(secondTimetable) modeToSend += 128;
 		client.beginPublish("i", 8, true);
@@ -395,10 +404,10 @@ void sendState(){
 }
 
 void sendFullState(){
-	byte array[112];
-	client.beginPublish("d", 112, true);
-	for(i=0;i<112;i++) array[i] = EEPROM.read(i);
-	client.write(array, 112);
+	byte array[113];
+	client.beginPublish("d", 113, true);
+	for(i=0;i<113;i++) array[i] = EEPROM.read(i);
+	client.write(array, 113);
 	client.endPublish();
 }
 
