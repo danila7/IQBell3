@@ -255,7 +255,7 @@ void checkMode(){
 				}
 			}
 			if(!secondTimetable){
-				if(timeinfo.tm_wday == 1 || timeinfo.tm_wday == 7){ //Sunday/Saturday
+				if(timeinfo.tm_wday == 6 || timeinfo.tm_wday == 0){ //Sunday/Saturday
 					if(mode == 0) mode = 1;
 					else mode = 0;
 				}
